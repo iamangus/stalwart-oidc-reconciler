@@ -185,6 +185,15 @@ directory and register your portal/webmail as public ZITADEL OIDC applications
 using authorization code + PKCE. On current Stalwart WebUI releases configure
 the application's `oauthClientId` to ZITADEL's generated client ID.
 
+**Community uses the global `Authentication.directoryId`.** Per-domain
+`Domain.directoryId` selection is Enterprise-gated in 0.16.27, even though the
+registry accepts the field. Setting only the domain field does not enable
+Community OIDC. A global external directory also replaces ordinary local
+password login: create and securely store an independent administrator API key
+before switching, and verify it can reset the global directory during an IdP
+outage. Local API keys are authenticated before the external directory. Do not
+leave bootstrap recovery mode enabled as a workaround.
+
 **Do not assume the user's ZITADEL recovery email equals its allocated mailbox.**
 This matters for `first.last@domain`, external recovery emails, and stable
 addresses after a name change. The optional claim handler supplies a custom
