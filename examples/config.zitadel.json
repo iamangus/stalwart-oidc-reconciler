@@ -1,0 +1,40 @@
+{
+  "state_file": "/data/state.json",
+  "listen": ":8080",
+  "interval": "1m",
+  "cycle_timeout": "5m",
+  "http_timeout": "30s",
+  "source": {
+    "kind": "zitadel",
+    "issuer": "https://id.example.com",
+    "scope": "YOUR_ORGANIZATION_ID",
+    "url": "https://id.example.com",
+    "token_file": "/run/secrets/zitadel-token",
+    "page_size": 100
+  },
+  "stalwart": {
+    "url": "https://mail.example.com",
+    "jmap_path": "/jmap",
+    "token_file": "/run/secrets/stalwart-token",
+    "domain": "example.com",
+    "domain_id": "YOUR_STALWART_DOMAIN_ID",
+    "quota_bytes": 5368709120,
+    "max_accounts": 10000
+  },
+  "policy": {
+    "max_users": 10000,
+    "missing_grace": "24h",
+    "max_suspensions": 5,
+    "max_suspend_fraction": 0.5,
+    "allow_empty": false,
+    "exclude_ids": ["YOUR_BREAK_GLASS_USER_ID"],
+    "address_overrides": {}
+  },
+  "zitadel_claims": {
+    "enabled": false,
+    "signing_key_file": "/run/secrets/zitadel-action-signing-key",
+    "client_ids": ["YOUR_PORTAL_CLIENT_ID", "YOUR_WEBMAIL_CLIENT_ID"],
+    "claim_name": "mail_address",
+    "max_stale": "15m"
+  }
+}

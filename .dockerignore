@@ -1,0 +1,8 @@
+.git
+data
+bin
+config.json
+.env
+*.key
+*.pem
+coverage.out

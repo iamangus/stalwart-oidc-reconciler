@@ -1,0 +1,86 @@
+# Replace image, configuration and secret names before applying. No credentials
+# are embedded here. Use your own secret manager (SOPS, ESO, etc.).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stalwart-oidc-reconciler
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: stalwart-oidc-reconciler
+  template:
+    metadata:
+      labels:
+        app: stalwart-oidc-reconciler
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+        - name: reconciler
+          image: YOUR_REGISTRY/stalwart-oidc-reconciler:YOUR_VERSION
+          # Dry-run by default. Add --apply only after inspecting --once output.
+          args: ["--config=/etc/reconciler/config.json"]
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          volumeMounts:
+            - name: config
+              mountPath: /etc/reconciler
+              readOnly: true
+            - name: credentials
+              mountPath: /run/secrets
+              readOnly: true
+            - name: state
+              mountPath: /data
+      volumes:
+        - name: config
+          configMap:
+            name: stalwart-oidc-reconciler-config
+        - name: credentials
+          secret:
+            secretName: stalwart-oidc-reconciler-credentials
+            defaultMode: 0440
+        - name: state
+          persistentVolumeClaim:
+            claimName: stalwart-oidc-reconciler-state
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stalwart-oidc-reconciler
+spec:
+  selector:
+    app: stalwart-oidc-reconciler
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+# Keep this Service internal. Signed action requests are the only write-free
+# application endpoint; do not expose metrics or the hook through a public LB.

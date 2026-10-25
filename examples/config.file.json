@@ -1,0 +1,15 @@
+{
+  "state_file": "/data/state.json",
+  "source": {
+    "kind": "file",
+    "issuer": "https://id.example.com",
+    "scope": "example-organization",
+    "file": "/etc/reconciler/users.json"
+  },
+  "stalwart": {
+    "url": "https://mail.example.com",
+    "token_file": "/run/secrets/stalwart-token",
+    "domain": "example.com",
+    "domain_id": "YOUR_STALWART_DOMAIN_ID"
+  }
+}

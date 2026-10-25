@@ -1,0 +1,16 @@
+{
+  "complete": true,
+  "issuer": "https://id.example.com",
+  "scope": "example-organization",
+  "revision": "example-1",
+  "users": [
+    {
+      "id": "immutable-user-id",
+      "given_name": "Alice",
+      "family_name": "Example",
+      "display_name": "Alice Example",
+      "human": true,
+      "active": true
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+/bin/
+/data/
+/config.json
+*.test
+coverage.out
+.env
+*.key
+*.pem
