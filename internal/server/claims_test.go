@@ -40,7 +40,7 @@ func TestSignatureFreshnessAndTampering(t *testing.T) {
 }
 
 func TestClaimsAreScopedFreshAndFailClosed(t *testing.T) {
-	for _, mode := range []string{"ok", "userinfo", "wrong signature", "wrong client", "wrong org", "stale", "suspended", "pending transition", "missing", "dry run", "bad function"} {
+	for _, mode := range []string{"ok", "userinfo", "production access token", "production userinfo", "wrong signature", "wrong client", "unrelated function and client", "wrong org", "stale", "suspended", "pending transition", "missing", "dry run", "bad function"} {
 		t.Run(mode, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "state.json")
@@ -59,6 +59,13 @@ func TestClaimsAreScopedFreshAndFailClosed(t *testing.T) {
 			switch mode {
 			case "userinfo":
 				function = "preuserinfo"
+			case "production access token":
+				function = "function/preaccesstoken"
+			case "production userinfo":
+				function = "function/preuserinfo"
+			case "unrelated function and client":
+				client, function, org = "other", "function/future-trigger", "other-org"
+				d.LastComplete = now.Add(-time.Hour)
 			case "wrong signature":
 				want = 401
 			case "wrong client":
@@ -100,12 +107,12 @@ func TestClaimsAreScopedFreshAndFailClosed(t *testing.T) {
 			if w.Code != want {
 				t.Fatalf("HTTP %d want %d: %s", w.Code, want, w.Body.String())
 			}
-			if mode == "ok" || mode == "userinfo" {
+			if mode == "ok" || mode == "userinfo" || strings.HasPrefix(mode, "production ") {
 				if !strings.Contains(w.Body.String(), `"mail_address"`) || !strings.Contains(w.Body.String(), "alice.example@example.com") {
 					t.Fatal(w.Body.String())
 				}
 			}
-			if mode == "wrong client" && strings.Contains(w.Body.String(), "alice.example") {
+			if (mode == "wrong client" || mode == "unrelated function and client") && strings.Contains(w.Body.String(), "alice.example") {
 				t.Fatal("claim leaked to unrelated client")
 			}
 		})

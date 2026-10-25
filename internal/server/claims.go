@@ -111,11 +111,6 @@ func (c Claims) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid action payload", http.StatusBadRequest)
 		return
 	}
-	function := strings.ToLower(request.Function)
-	if function != "preuserinfo" && function != "preaccesstoken" {
-		http.Error(w, "unsupported action function", http.StatusBadRequest)
-		return
-	}
 	allowed := false
 	for _, id := range c.ClientIDs {
 		if id == request.Application.ClientID {
@@ -126,6 +121,14 @@ func (c Claims) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Actions can be installed instance-wide. Leave unrelated applications alone.
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"append_claims":[]}`))
+		return
+	}
+	// ZITADEL 4.20 sends the execution aggregate ID (function/preuserinfo or
+	// function/preaccesstoken), not just the function name used by its API.
+	// Keep bare names compatible with earlier payloads and fixtures.
+	function := strings.TrimPrefix(strings.ToLower(request.Function), "function/")
+	if function != "preuserinfo" && function != "preaccesstoken" {
+		http.Error(w, "unsupported action function", http.StatusBadRequest)
 		return
 	}
 	if request.User.ID == "" {
