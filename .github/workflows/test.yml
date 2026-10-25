@@ -23,6 +23,9 @@ jobs:
       - run: go test -race -coverprofile=coverage.out ./...
       - run: make scan
       - run: go build ./cmd/reconciler
+      - name: Validate container on pull requests
+        if: github.event_name == 'pull_request'
+        run: docker build --build-arg VERSION=pr -t stalwart-oidc-reconciler:pr .
   publish:
     needs: test
     if: github.event_name != 'pull_request'

@@ -243,6 +243,12 @@ never disabled. Redirects are not followed, preventing credential forwarding.
 
 ## Container and Kubernetes
 
+Published images: `ghcr.io/iamangus/stalwart-oidc-reconciler` (public, Linux
+AMD64 and ARM64). Pushes to `main` and `v*` tags run tests, vet and vulnerability
+scanning before publishing. Tags include `main`, `sha-<full commit>`, and semver
+release tags; pin deployments to the published **digest**, not a moving tag.
+Pull requests test code without publishing or receiving package-write access.
+
 ```sh
 docker build --build-arg VERSION=0.1.0 -t stalwart-oidc-reconciler:0.1.0 .
 ```
