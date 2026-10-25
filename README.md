@@ -200,8 +200,13 @@ addresses after a name change. The optional claim handler supplies a custom
 `mail_address` from the durable mapping:
 
 1. Run the reconciler in apply mode until all intended accounts exist.
-2. Create a ZITADEL Actions V2 **call** target pointing to the internal URL
-   `http://reconciler:8080/hooks/zitadel/claims`. Set `interruptOnError: true`.
+2. Create a ZITADEL Actions V2 **call** target pointing to the hook. Prefer an
+   internal URL if allowed by the provider's SSRF policy; otherwise expose only
+   this signed endpoint over trusted HTTPS. Do not disable SSRF protections.
+   For instance-wide executions, set `interruptOnError: false` so hook outages
+   do not block unrelated clients. Mail still fails closed: Stalwart must require
+   `mail_address` and reject any token missing that custom claim. Verify this
+   with the pinned server version; never fall back to upstream recovery email.
 3. Mount that target's signing key as `signing_key_file`. Enable `zitadel_claims`
    and explicitly allow the portal/webmail client IDs.
 4. Attach the target to **PreUserinfo** and **PreAccessToken** function executions.
