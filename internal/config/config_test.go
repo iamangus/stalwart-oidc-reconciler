@@ -80,3 +80,27 @@ func TestKeycloakConfiguration(t *testing.T) {
 		t.Fatal("include scope not fingerprinted")
 	}
 }
+
+func TestSignupScopeAndPublisherIsolation(t *testing.T) {
+	c := example()
+	c.Source.Kind, c.Source.Scope = "keycloak", "apps"
+	c.Source.URL, c.Source.Issuer = "https://id.example.com/auth", "https://id.example.com/auth/realms/apps"
+	c.Source.ClientID, c.Source.ClientSecretFile = "reader", "/run/source/client-secret"
+	old := c.ReconcilePolicy().Fingerprint()
+	c.Source.OrganizationID = "signup-org-id"
+	if c.Validate() != nil || c.ReconcilePolicy().Fingerprint() == old {
+		t.Fatal("organization scope not validated/fingerprinted")
+	}
+	c.Publisher.Enabled = true
+	if c.Validate() == nil {
+		t.Fatal("accepted missing publisher credentials")
+	}
+	c.Publisher.ClientID, c.Publisher.ClientSecretFile = "publisher", "/run/publisher/client-secret"
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	c.Publisher.ClientID = c.Source.ClientID
+	if c.Validate() == nil {
+		t.Fatal("reader reused for writes")
+	}
+}

@@ -49,6 +49,36 @@ The claim endpoint is **not** a lifecycle-event/provisioning webhook.
 
 ### Keycloak and reviewed provider migration
 
+#### Invitation-only onboarding (staged)
+
+The optional Keycloak provider in [`keycloak-provider/`](keycloak-provider/README.md)
+adds restricted, write-once mail-claim publication and SRVD mailbox login/reset
+lookup. Native Organizations invitations, credentials, MFA and recovery-email
+verification remain Keycloak's responsibility. Production activation is separate;
+adding these source files does not open registration or expand a live pilot.
+
+For onboarding, set `source.organization_id` to the explicit immutable signup
+organization ID and retain existing approved pilot `policy.include_ids`. Only
+those IDs **or** members of that organization are eligible. New Keycloak users
+must have verified recovery email, complete names, no required actions and be
+enabled before mailbox creation. The organization is fingerprinted: an existing
+pilot needs a reviewed zero-action scope migration, never a state-file edit.
+
+`policy.numeric_suffixes=true` opts into `firstname.lastname2`, then `3`, etc.
+Existing accounts, aliases, claims and protected entries reserve addresses.
+Explicit overrides remain exact. Default behavior still rejects collisions.
+Allocated addresses remain stable when profile names change.
+
+`keycloak_publisher` takes `enabled`, `client_id` and `client_secret_file`. Its
+credential must differ from the read-only source. The engine publishes only after
+the created mailbox ID/address is durably saved. Failures retry publication rather
+than recreate a mailbox; conflicting claims and uncertain creation still fail
+closed. Protected entries are never published. The provider role cannot edit
+passwords, usernames, recovery emails or arbitrary user fields. Its image is
+published separately by `.github/workflows/keycloak.yml`.
+
+#### Directory source and migration
+
 See `examples/config.keycloak.json`. Use a service client scoped to the intended
 realm's `view-users`/`query-users`, not a server/operator administrator credential.
 The adapter obtains a fresh short-lived bearer token per snapshot. HTTPS and exact

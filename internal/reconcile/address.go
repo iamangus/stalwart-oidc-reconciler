@@ -3,6 +3,7 @@ package reconcile
 import (
 	"errors"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -41,6 +42,21 @@ func namePart(s string) (string, error) {
 		return "", errors.New("given and family names are required (or set address override)")
 	}
 	return out.String(), nil
+}
+
+func suffixedAddress(base string, used map[string]string) (string, error) {
+	parts := strings.SplitN(base, "@", 2)
+	for n := 2; n <= 10000; n++ {
+		local := parts[0] + strconv.Itoa(n)
+		if !validLocal(local) {
+			return "", errors.New("suffixed address exceeds local-part limit; explicit override required")
+		}
+		candidate := local + "@" + parts[1]
+		if used[candidate] == "" {
+			return candidate, nil
+		}
+	}
+	return "", errors.New("address suffix safety limit exhausted")
 }
 
 func address(u identity.User, domain string, overrides map[string]string) (string, error) {

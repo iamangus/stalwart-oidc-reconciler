@@ -9,12 +9,15 @@ import (
 )
 
 type User struct {
-	ID          string `json:"id"`
-	GivenName   string `json:"given_name"`
-	FamilyName  string `json:"family_name"`
-	DisplayName string `json:"display_name"`
-	Human       bool   `json:"human"`
-	Active      bool   `json:"active"`
+	ID                 string `json:"id"`
+	GivenName          string `json:"given_name"`
+	FamilyName         string `json:"family_name"`
+	DisplayName        string `json:"display_name"`
+	Human              bool   `json:"human"`
+	Active             bool   `json:"active"`
+	MailAddress        string `json:"mail_address,omitempty"`
+	OrganizationMember bool   `json:"organization_member,omitempty"`
+	OnboardingPending  bool   `json:"onboarding_pending,omitempty"`
 }
 
 type Snapshot struct {
@@ -27,6 +30,12 @@ type Snapshot struct {
 
 type Source interface {
 	Snapshot(context.Context) (Snapshot, error)
+}
+
+// AddressPublisher can publish only an already-owned mailbox address. It must
+// reject a conflicting existing claim rather than overwrite or adopt it.
+type AddressPublisher interface {
+	PublishAddress(context.Context, string, string) error
 }
 
 func (s Snapshot) Validate(issuer, scope string, maxUsers int) error {

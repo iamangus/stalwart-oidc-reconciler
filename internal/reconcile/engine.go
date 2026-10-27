@@ -39,6 +39,8 @@ type Policy struct {
 	ExcludeIDs         []string
 	AddressOverrides   map[string]string
 	IncludeIDs         []string
+	OrganizationID     string
+	NumericSuffixes    bool
 }
 
 func (p Policy) Fingerprint() string {
@@ -49,6 +51,9 @@ func (p Policy) Fingerprint() string {
 		sort.Strings(ids)
 		encoded, _ := json.Marshal(ids)
 		parts = append(parts, "include_ids", string(encoded))
+	}
+	if p.OrganizationID != "" {
+		parts = append(parts, "organization_id", p.OrganizationID)
 	}
 	b, _ := json.Marshal(parts)
 	s := sha256.Sum256(b)
@@ -74,11 +79,12 @@ type Plan struct {
 }
 
 type Engine struct {
-	Source identity.Source
-	Target mailbox.Destination
-	Store  state.Store
-	Policy Policy
-	Now    func() time.Time
+	Source    identity.Source
+	Target    mailbox.Destination
+	Store     state.Store
+	Policy    Policy
+	Now       func() time.Time
+	Publisher identity.AddressPublisher
 }
 
 func equalJSON(a, b any) bool {
@@ -148,7 +154,7 @@ func (e *Engine) Build(s identity.Snapshot, dest mailbox.Snapshot, previous stat
 		included[id] = true
 	}
 	for _, user := range s.Users {
-		if user.Human && !excluded[user.ID] && (len(included) == 0 || included[user.ID]) {
+		if user.Human && !excluded[user.ID] && (len(included) == 0 && p.OrganizationID == "" || included[user.ID] || p.OrganizationID != "" && user.OrganizationMember) {
 			users[user.ID] = user
 		}
 	}
@@ -197,6 +203,15 @@ func (e *Engine) Build(s identity.Snapshot, dest mailbox.Snapshot, previous stat
 		}
 		usedAddresses[entry.Address] = a.ID
 	}
+	// Reserve already-published addresses even for identities outside our pilot or
+	// signup organization. A claim is not permission to adopt its mailbox.
+	for _, user := range s.Users {
+		if user.MailAddress != "" && strings.HasSuffix(user.MailAddress, "@"+p.Domain) && plan.Next.Entries[user.ID] == nil {
+			if err := reserve(user.MailAddress, "source:"+user.ID); err != nil {
+				return fail(err)
+			}
+		}
+	}
 	ids := make([]string, 0, len(users))
 	for id := range users {
 		ids = append(ids, id)
@@ -209,12 +224,27 @@ func (e *Engine) Build(s identity.Snapshot, dest mailbox.Snapshot, previous stat
 			return fail(errors.New("source identity collides with a protected ownership reservation"))
 		}
 		if entry == nil {
+			// Membership alone is not completed onboarding. Never provision an
+			// inactive/unverified/unfinished signup, or adopt an existing claim.
+			if u.OnboardingPending || !u.Active && p.OrganizationID != "" {
+				continue
+			}
+			if e.Publisher != nil && u.MailAddress != "" {
+				return fail(errors.New("unowned identity already has a mail claim; explicit ownership review required"))
+			}
 			addr, err := address(u, p.Domain, p.AddressOverrides)
 			if err != nil {
 				return fail(fmt.Errorf("identity %s: %w", id, err))
 			}
 			if usedAddresses[addr] != "" {
-				return fail(fmt.Errorf("identity %s: address collision; an explicit override or reviewed ownership migration is required", id))
+				_, explicit := p.AddressOverrides[id]
+				if !p.NumericSuffixes || explicit {
+					return fail(fmt.Errorf("identity %s: address collision; an explicit override or reviewed ownership migration is required", id))
+				}
+				addr, err = suffixedAddress(addr, usedAddresses)
+				if err != nil {
+					return fail(err)
+				}
 			}
 			usedAddresses[addr] = "new:" + id
 			permissions := json.RawMessage(`{"@type":"Inherit"}`)
@@ -229,7 +259,16 @@ func (e *Engine) Build(s identity.Snapshot, dest mailbox.Snapshot, previous stat
 				"encryptionAtRest": map[string]any{"@type": "Disabled"},
 			}
 			plan.Actions = append(plan.Actions, Action{Kind: "create", IdentityID: id, Address: addr, Patch: object})
+			if e.Publisher != nil {
+				plan.Actions = append(plan.Actions, Action{Kind: "publish_address", IdentityID: id, Address: addr})
+			}
 			continue
+		}
+		if e.Publisher != nil && u.MailAddress != "" && u.MailAddress != entry.Address {
+			return fail(errors.New("owned identity mail claim conflicts with durable mailbox address"))
+		}
+		if e.Publisher != nil && u.MailAddress == "" && u.Active && !u.OnboardingPending {
+			plan.Actions = append(plan.Actions, Action{Kind: "publish_address", IdentityID: id, Address: entry.Address})
 		}
 		entry.MissingSince = nil
 		a := accounts[entry.AccountID]
@@ -276,7 +315,7 @@ func (e *Engine) Build(s identity.Snapshot, dest mailbox.Snapshot, previous stat
 	if suspensions > p.MaxSuspensions || len(previous.Entries) > 0 && float64(suspensions)/float64(len(previous.Entries)) > p.MaxSuspendFraction {
 		return fail(errors.New("suspension safety threshold exceeded; no mutations performed"))
 	}
-	sort.Slice(plan.Actions, func(i, j int) bool { return plan.Actions[i].IdentityID < plan.Actions[j].IdentityID })
+	sort.SliceStable(plan.Actions, func(i, j int) bool { return plan.Actions[i].IdentityID < plan.Actions[j].IdentityID })
 	return plan, nil
 }
 
@@ -331,6 +370,16 @@ func (e *Engine) Run(ctx context.Context, apply bool) (Plan, error) {
 			return plan, err
 		}
 		entry := plan.Next.Entries[action.IdentityID]
+		if action.Kind == "publish_address" {
+			if entry == nil || entry.Protected || entry.Status != "active" || entry.AccountID == "" || entry.Address != action.Address || e.Publisher == nil {
+				return plan, errors.New("cannot publish an unconfirmed or protected mailbox")
+			}
+			if err := e.Publisher.PublishAddress(ctx, action.IdentityID, entry.Address); err != nil {
+				return plan, err
+			}
+			plan.Applied++
+			continue
+		}
 		if action.Kind == "create" {
 			entry = &state.Entry{Address: action.Address, Status: "pending"}
 			plan.Next.Entries[action.IdentityID] = entry

@@ -33,6 +33,7 @@ type Config struct {
 		PageSize         int    `json:"page_size"`
 		ClientID         string `json:"client_id"`
 		ClientSecretFile string `json:"client_secret_file"`
+		OrganizationID   string `json:"organization_id"`
 	} `json:"source"`
 	Stalwart struct {
 		URL         string `json:"url"`
@@ -53,6 +54,7 @@ type Config struct {
 		ExcludeIDs         []string          `json:"exclude_ids"`
 		IncludeIDs         []string          `json:"include_ids"`
 		AddressOverrides   map[string]string `json:"address_overrides"`
+		NumericSuffixes    bool              `json:"numeric_suffixes"`
 	} `json:"policy"`
 	Claims struct {
 		Enabled        bool     `json:"enabled"`
@@ -61,6 +63,11 @@ type Config struct {
 		ClaimName      string   `json:"claim_name"`
 		MaxStale       string   `json:"max_stale"`
 	} `json:"zitadel_claims"`
+	Publisher struct {
+		Enabled          bool   `json:"enabled"`
+		ClientID         string `json:"client_id"`
+		ClientSecretFile string `json:"client_secret_file"`
+	} `json:"keycloak_publisher"`
 }
 
 func Defaults() Config {
@@ -157,6 +164,12 @@ func (c Config) Validate() error {
 		}
 	}
 	ids := map[string]bool{}
+	if c.Source.OrganizationID != "" && (c.Source.Kind != "keycloak" || !regexp.MustCompile(`^[a-zA-Z0-9-]+$`).MatchString(c.Source.OrganizationID)) {
+		return errors.New("organization_id requires Keycloak and an immutable organization ID")
+	}
+	if c.Publisher.Enabled && (c.Source.Kind != "keycloak" || c.Publisher.ClientID == "" || c.Publisher.ClientID == c.Source.ClientID || c.Publisher.ClientSecretFile == "" || c.Publisher.ClientSecretFile == c.Source.ClientSecretFile) {
+		return errors.New("Keycloak publisher requires distinct client credentials and a Keycloak source")
+	}
 	for _, id := range c.Policy.IncludeIDs {
 		if id == "" || ids[id] {
 			return errors.New("include_ids must contain nonempty unique subject IDs")
@@ -176,6 +189,7 @@ func (c Config) ReconcilePolicy() reconcile.Policy {
 		MaxUsers: c.Policy.MaxUsers, MissingGrace: Duration(c.Policy.MissingGrace),
 		MaxSuspensions: c.Policy.MaxSuspensions, MaxSuspendFraction: c.Policy.MaxSuspendFraction,
 		AllowEmpty: c.Policy.AllowEmpty, ExcludeIDs: c.Policy.ExcludeIDs, AddressOverrides: c.Policy.AddressOverrides,
-		IncludeIDs: c.Policy.IncludeIDs,
+		IncludeIDs:     c.Policy.IncludeIDs,
+		OrganizationID: c.Source.OrganizationID, NumericSuffixes: c.Policy.NumericSuffixes,
 	}
 }

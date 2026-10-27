@@ -90,7 +90,7 @@ func run(args []string) error {
 	} else if c.Source.Kind == "keycloak" {
 		src = &source.Keycloak{HTTP: httpapi.New(c.Source.URL, "", config.Duration(c.HTTPTimeout)).HTTP,
 			Base: c.Source.URL, Issuer: c.Source.Issuer, Realm: c.Source.Scope, ClientID: c.Source.ClientID,
-			ClientSecretFile: c.Source.ClientSecretFile, PageSize: c.Source.PageSize, MaxUsers: c.Policy.MaxUsers}
+			ClientSecretFile: c.Source.ClientSecretFile, PageSize: c.Source.PageSize, MaxUsers: c.Policy.MaxUsers, OrganizationID: c.Source.OrganizationID}
 	} else {
 		src = source.File{Path: c.Source.File}
 	}
@@ -98,6 +98,10 @@ func run(args []string) error {
 		JMAPPath: c.Stalwart.JMAPPath, MaxAccounts: c.Stalwart.MaxAccounts,
 		Domain: c.Stalwart.Domain, DomainID: c.Stalwart.DomainID}
 	engine := reconcile.Engine{Source: src, Target: target, Store: store, Policy: c.ReconcilePolicy()}
+	if c.Publisher.Enabled {
+		engine.Publisher = &source.Keycloak{HTTP: httpapi.New(c.Source.URL, "", config.Duration(c.HTTPTimeout)).HTTP,
+			Base: c.Source.URL, Issuer: c.Source.Issuer, Realm: c.Source.Scope, ClientID: c.Publisher.ClientID, ClientSecretFile: c.Publisher.ClientSecretFile}
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	if *once {
