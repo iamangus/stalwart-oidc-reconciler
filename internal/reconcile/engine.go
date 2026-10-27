@@ -38,11 +38,19 @@ type Policy struct {
 	AllowEmpty         bool
 	ExcludeIDs         []string
 	AddressOverrides   map[string]string
+	IncludeIDs         []string
 }
 
 func (p Policy) Fingerprint() string {
 	// Changing a safety scope must never turn the old users into "deleted" users.
-	b, _ := json.Marshal([]string{"v1", p.SourceKind, p.Issuer, p.Scope, p.Destination, p.Domain, p.DomainID})
+	parts := []string{"v1", p.SourceKind, p.Issuer, p.Scope, p.Destination, p.Domain, p.DomainID}
+	if len(p.IncludeIDs) > 0 {
+		ids := append([]string(nil), p.IncludeIDs...)
+		sort.Strings(ids)
+		encoded, _ := json.Marshal(ids)
+		parts = append(parts, "include_ids", string(encoded))
+	}
+	b, _ := json.Marshal(parts)
 	s := sha256.Sum256(b)
 	return hex.EncodeToString(s[:])
 }
@@ -135,8 +143,12 @@ func (e *Engine) Build(s identity.Snapshot, dest mailbox.Snapshot, previous stat
 		excluded[id] = true
 	}
 	users := map[string]identity.User{}
+	included := map[string]bool{}
+	for _, id := range p.IncludeIDs {
+		included[id] = true
+	}
 	for _, user := range s.Users {
-		if user.Human && !excluded[user.ID] {
+		if user.Human && !excluded[user.ID] && (len(included) == 0 || included[user.ID]) {
 			users[user.ID] = user
 		}
 	}
@@ -193,6 +205,9 @@ func (e *Engine) Build(s identity.Snapshot, dest mailbox.Snapshot, previous stat
 	for _, id := range ids {
 		u := users[id]
 		entry := plan.Next.Entries[id]
+		if entry != nil && entry.Protected {
+			return fail(errors.New("source identity collides with a protected ownership reservation"))
+		}
 		if entry == nil {
 			addr, err := address(u, p.Domain, p.AddressOverrides)
 			if err != nil {
@@ -237,6 +252,9 @@ func (e *Engine) Build(s identity.Snapshot, dest mailbox.Snapshot, previous stat
 		}
 	}
 	for id, entry := range plan.Next.Entries {
+		if entry.Protected {
+			continue
+		}
 		if _, ok := users[id]; ok {
 			continue
 		}

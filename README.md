@@ -10,6 +10,7 @@ not a claim that every OIDC provider exposes the same user-management API.
 
 ```text
 ZITADEL API ─┐
+Keycloak API ┤
              ├─ complete user snapshot → plan → Stalwart Community JMAP API
 JSON file ───┘                           ↕
                                 durable ownership state
@@ -21,6 +22,9 @@ Browser/webmail → identity provider login → access token → Stalwart
 
 - ZITADEL organization-scoped directory adapter with bounded pagination,
   projection-sequence consistency checks, and human/machine distinction.
+- Keycloak realm-scoped read-only adapter using file-backed client credentials,
+  bounded count/page validation and two identical enumeration passes. It never
+  reads user credential records, writes Keycloak users or follows redirects.
 - Provider-neutral JSON inventory adapter and a small `identity.Source` interface
   for additional providers.
 - Stalwart **0.16.x** registry adapter using `x:Account/*` and `x:Domain/get` on
@@ -42,6 +46,62 @@ assignment, source-password synchronization, or source-email mutation is provide
 Existing aliases, credentials, memberships, and unowned quota limits are preserved.
 Lifecycle webhooks are not required: periodic full reconciliation is authoritative.
 The claim endpoint is **not** a lifecycle-event/provisioning webhook.
+
+### Keycloak and reviewed provider migration
+
+See `examples/config.keycloak.json`. Use a service client scoped to the intended
+realm's `view-users`/`query-users`, not a server/operator administrator credential.
+The adapter obtains a fresh short-lived bearer token per snapshot. HTTPS and exact
+base/realm/issuer consistency are required. Service accounts are not human users.
+Two identical reads reduce pagination races; this is not a transactional snapshot
+guarantee from Keycloak. Errors, inconsistent counts, duplicate IDs, unknown active
+states, oversized responses or directory changes block mutations.
+
+`policy.include_ids` limits a pilot to explicit immutable subjects. Nonempty
+allowlists are fingerprinted; expanding/removing one is a scope migration, not an
+implicit switch. Existing `exclude_ids` still applies. The adapter does not write
+mail-address claims: configure a protected, administrator-managed Keycloak claim
+that matches the reconciler's stable allocation. Never substitute the user's
+recovery email or weaken Stalwart's issuer/audience checks.
+
+Normal startup still rejects a changed ownership fingerprint. To migrate an
+existing provider, stop its reconciler first and supply an explicit JSON file:
+
+```json
+{
+  "from_fingerprint": "reviewed-old-scope",
+  "to_fingerprint": "reviewed-new-scope",
+  "mappings": [{
+    "from_id": "old-subject", "to_id": "new-subject",
+    "account_id": "existing-mailbox-id", "address": "alice.example@example.com",
+    "status": "active"
+  }],
+  "protect": [{
+    "identity_id": "other-old-subject", "account_id": "other-mailbox-id",
+    "address": "other@example.com", "status": "suspended"
+  }]
+}
+```
+
+Every previous entry must be mapped or explicitly protected, with matching IDs,
+address and state. No mapping is inferred from an email/name. Protected entries
+retain ownership/address reservations and are checked for drift, but the new
+provider never updates, reactivates or suspends them. They cannot be recycled.
+The migration reads both directories, requires a zero-mailbox-mutation plan and
+updates only ownership state under the same exclusive lock. Source/target errors,
+uncertain transitions, unapproved dispositions and mailbox drift fail closed.
+
+```sh
+reconciler --config=new.json --print-fingerprint
+reconciler --config=new.json --once --migrate-state=migration.json
+# Review the dry-run result; no state or mailbox mutation occurred.
+reconciler --config=new.json --once --migrate-state=migration.json --apply
+```
+
+The daemon must remain stopped during migration and validation. The new image is
+required to read state containing protected entries; do not blindly roll back to
+an older binary. Keep the reviewed migration artifact with deployment sources.
+This command is not a database backup or a mailbox adoption/recreation mechanism.
 
 ## Quick start
 

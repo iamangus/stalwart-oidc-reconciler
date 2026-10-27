@@ -40,6 +40,8 @@ func run(args []string) error {
 	once := flags.Bool("once", false, "plan/reconcile once, then exit")
 	apply := flags.Bool("apply", false, "enable mutations (default: dry-run)")
 	showVersion := flags.Bool("version", false, "print version")
+	showFingerprint := flags.Bool("print-fingerprint", false, "validate configuration and print its ownership scope fingerprint without API calls")
+	migration := flags.String("migrate-state", "", "reviewed ownership migration file; requires --once (dry-run unless --apply)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -49,6 +51,9 @@ func run(args []string) error {
 	if flags.NArg() != 0 {
 		return errors.New("unexpected positional arguments")
 	}
+	if *migration != "" && !*once {
+		return errors.New("state migration requires --once")
+	}
 	if *showVersion {
 		fmt.Println(version)
 		return nil
@@ -57,6 +62,13 @@ func run(args []string) error {
 	c, err := config.Load(*path)
 	if err != nil {
 		return err
+	}
+	if *showFingerprint {
+		if *once || *apply || *migration != "" {
+			return errors.New("print-fingerprint cannot be combined with reconciliation or migration flags")
+		}
+		fmt.Println(c.ReconcilePolicy().Fingerprint())
+		return nil
 	}
 	store, err := state.Open(c.StateFile)
 	if err != nil {
@@ -68,13 +80,17 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	if initial.Fingerprint != "" && initial.Fingerprint != c.ReconcilePolicy().Fingerprint() {
+	if *migration == "" && initial.Fingerprint != "" && initial.Fingerprint != c.ReconcilePolicy().Fingerprint() {
 		return errors.New("configuration scope does not match existing state")
 	}
 	var src identity.Source
 	if c.Source.Kind == "zitadel" {
 		src = &source.Zitadel{API: httpapi.New(c.Source.URL, c.Source.TokenFile, config.Duration(c.HTTPTimeout)),
 			Issuer: c.Source.Issuer, Organization: c.Source.Scope, PageSize: c.Source.PageSize, MaxUsers: c.Policy.MaxUsers}
+	} else if c.Source.Kind == "keycloak" {
+		src = &source.Keycloak{HTTP: httpapi.New(c.Source.URL, "", config.Duration(c.HTTPTimeout)).HTTP,
+			Base: c.Source.URL, Issuer: c.Source.Issuer, Realm: c.Source.Scope, ClientID: c.Source.ClientID,
+			ClientSecretFile: c.Source.ClientSecretFile, PageSize: c.Source.PageSize, MaxUsers: c.Policy.MaxUsers}
 	} else {
 		src = source.File{Path: c.Source.File}
 	}
@@ -87,7 +103,16 @@ func run(args []string) error {
 	if *once {
 		cycle, cancel := context.WithTimeout(ctx, config.Duration(c.CycleTimeout))
 		defer cancel()
-		plan, err := engine.Run(cycle, *apply)
+		var plan reconcile.Plan
+		if *migration != "" {
+			var spec reconcile.Migration
+			spec, err = reconcile.LoadMigration(*migration)
+			if err == nil {
+				plan, err = engine.Migrate(cycle, spec, *apply)
+			}
+		} else {
+			plan, err = engine.Run(cycle, *apply)
+		}
 		if err != nil {
 			return err
 		}

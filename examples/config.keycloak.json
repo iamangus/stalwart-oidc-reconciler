@@ -1,0 +1,22 @@
+{
+  "state_file": "/data/state.json",
+  "source": {
+    "kind": "keycloak",
+    "url": "https://auth.example.com/auth",
+    "issuer": "https://auth.example.com/auth/realms/apps",
+    "scope": "apps",
+    "client_id": "mail-directory-reader",
+    "client_secret_file": "/run/source/client-secret"
+  },
+  "stalwart": {
+    "url": "http://stalwart.mail.svc.cluster.local:8080",
+    "allow_http": true,
+    "token_file": "/run/target/token",
+    "domain": "example.com",
+    "domain_id": "domain-id"
+  },
+  "policy": {
+    "include_ids": ["explicit-pilot-subject"],
+    "missing_grace": "24h"
+  }
+}

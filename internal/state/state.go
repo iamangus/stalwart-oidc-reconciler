@@ -20,6 +20,9 @@ type Entry struct {
 	MissingSince        *time.Time      `json:"missing_since,omitempty"`
 	PreviousPermissions json.RawMessage `json:"previous_permissions,omitempty"`
 	Transition          string          `json:"transition,omitempty"`
+	// Protected entries keep their address/account reservation after an explicit
+	// provider migration, but are never lifecycle-managed by the new provider.
+	Protected bool `json:"protected,omitempty"`
 }
 
 type Data struct {
@@ -86,6 +89,9 @@ func Read(path string) (Data, error) {
 		}
 		if entry.Transition != "" && entry.Transition != "suspend" && entry.Transition != "resume" {
 			return d, errors.New("unknown state permission transition")
+		}
+		if entry.Protected && (entry.Status == "pending" || entry.Transition != "") {
+			return d, errors.New("protected mailbox has an uncertain transition")
 		}
 		if entry.AccountID != "" {
 			if ids[entry.AccountID] {

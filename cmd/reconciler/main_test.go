@@ -30,6 +30,31 @@ func TestCLIFlags(t *testing.T) {
 	if err := run([]string{"unexpected"}); err == nil {
 		t.Fatal("positional argument accepted")
 	}
+	if err := run([]string{"--migrate-state", "migration.json"}); err == nil {
+		t.Fatal("migration accepted without once")
+	}
+}
+
+func TestFingerprintDoesNotOpenStateOrCredentials(t *testing.T) {
+	dir := t.TempDir()
+	stateDir := filepath.Join(dir, "must-not-create")
+	c := map[string]any{"state_file": filepath.Join(stateDir, "state.json"),
+		"source":   map[string]any{"kind": "keycloak", "url": "https://id.example.com", "issuer": "https://id.example.com/realms/apps", "scope": "apps", "client_id": "reader", "client_secret_file": "/nonexistent/secret"},
+		"stalwart": map[string]any{"url": "https://mail.example.com", "domain": "example.com", "domain_id": "d", "token_file": "/nonexistent/token"}}
+	b, _ := json.Marshal(c)
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"--config", path, "--print-fingerprint"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stateDir); !os.IsNotExist(err) {
+		t.Fatal("fingerprint touched state directory")
+	}
+	if err := run([]string{"--config", path, "--print-fingerprint", "--apply"}); err == nil {
+		t.Fatal("mixed metadata/mutation flags accepted")
+	}
 }
 
 func TestDaemonHelper(t *testing.T) {

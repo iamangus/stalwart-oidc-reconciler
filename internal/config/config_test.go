@@ -48,3 +48,35 @@ func TestConfigurationSafety(t *testing.T) {
 		}
 	}
 }
+
+func TestKeycloakConfiguration(t *testing.T) {
+	c := example()
+	c.Source.Kind, c.Source.Scope = "keycloak", "apps"
+	c.Source.URL, c.Source.Issuer = "https://id.example.com/auth", "https://id.example.com/auth/realms/apps"
+	c.Source.ClientID, c.Source.ClientSecretFile = "reader", "/run/reader/secret"
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"wrong issuer", "no secret", "bad realm", "http"} {
+		d := c
+		switch mode {
+		case "wrong issuer":
+			d.Source.Issuer += "-other"
+		case "no secret":
+			d.Source.ClientSecretFile = ""
+		case "bad realm":
+			d.Source.Scope = "../other"
+		case "http":
+			d.Source.URL = "http://id.example.com/auth"
+		}
+		if d.Validate() == nil {
+			t.Fatal("accepted", mode)
+		}
+	}
+	p := c.ReconcilePolicy()
+	old := p.Fingerprint()
+	p.IncludeIDs = []string{"pilot"}
+	if p.Fingerprint() == old {
+		t.Fatal("include scope not fingerprinted")
+	}
+}

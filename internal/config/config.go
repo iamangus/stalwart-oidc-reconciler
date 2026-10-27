@@ -23,14 +23,16 @@ type Config struct {
 	CycleTimeout string `json:"cycle_timeout"`
 	HTTPTimeout  string `json:"http_timeout"`
 	Source       struct {
-		Kind      string `json:"kind"`
-		Issuer    string `json:"issuer"`
-		Scope     string `json:"scope"`
-		URL       string `json:"url"`
-		TokenFile string `json:"token_file"`
-		AllowHTTP bool   `json:"allow_http"`
-		File      string `json:"file"`
-		PageSize  int    `json:"page_size"`
+		Kind             string `json:"kind"`
+		Issuer           string `json:"issuer"`
+		Scope            string `json:"scope"`
+		URL              string `json:"url"`
+		TokenFile        string `json:"token_file"`
+		AllowHTTP        bool   `json:"allow_http"`
+		File             string `json:"file"`
+		PageSize         int    `json:"page_size"`
+		ClientID         string `json:"client_id"`
+		ClientSecretFile string `json:"client_secret_file"`
 	} `json:"source"`
 	Stalwart struct {
 		URL         string `json:"url"`
@@ -49,6 +51,7 @@ type Config struct {
 		MaxSuspendFraction float64           `json:"max_suspend_fraction"`
 		AllowEmpty         bool              `json:"allow_empty"`
 		ExcludeIDs         []string          `json:"exclude_ids"`
+		IncludeIDs         []string          `json:"include_ids"`
 		AddressOverrides   map[string]string `json:"address_overrides"`
 	} `json:"policy"`
 	Claims struct {
@@ -109,8 +112,14 @@ func (c Config) Validate() error {
 		if c.Source.File == "" {
 			return errors.New("file source requires file path")
 		}
+	case "keycloak":
+		if httpapi.ValidateURL(c.Source.URL, false) != nil || c.Source.ClientID == "" || c.Source.ClientSecretFile == "" ||
+			!regexp.MustCompile(`^[a-zA-Z0-9_-]+$`).MatchString(c.Source.Scope) ||
+			c.Source.Issuer != strings.TrimRight(c.Source.URL, "/")+"/realms/"+c.Source.Scope || c.Source.PageSize < 1 || c.Source.PageSize > 1000 {
+			return errors.New("invalid Keycloak HTTPS URL, matching realm/issuer, client credentials or page_size")
+		}
 	default:
-		return errors.New("source.kind must be zitadel or file")
+		return errors.New("source.kind must be zitadel, keycloak or file")
 	}
 	if httpapi.ValidateURL(c.Stalwart.URL, c.Stalwart.AllowHTTP) != nil || c.Stalwart.TokenFile == "" {
 		return errors.New("invalid Stalwart URL or missing token file")
@@ -147,6 +156,13 @@ func (c Config) Validate() error {
 			return errors.New("claim_name must be a custom claim, not a standard identity/security claim")
 		}
 	}
+	ids := map[string]bool{}
+	for _, id := range c.Policy.IncludeIDs {
+		if id == "" || ids[id] {
+			return errors.New("include_ids must contain nonempty unique subject IDs")
+		}
+		ids[id] = true
+	}
 	return nil
 }
 
@@ -160,5 +176,6 @@ func (c Config) ReconcilePolicy() reconcile.Policy {
 		MaxUsers: c.Policy.MaxUsers, MissingGrace: Duration(c.Policy.MissingGrace),
 		MaxSuspensions: c.Policy.MaxSuspensions, MaxSuspendFraction: c.Policy.MaxSuspendFraction,
 		AllowEmpty: c.Policy.AllowEmpty, ExcludeIDs: c.Policy.ExcludeIDs, AddressOverrides: c.Policy.AddressOverrides,
+		IncludeIDs: c.Policy.IncludeIDs,
 	}
 }
